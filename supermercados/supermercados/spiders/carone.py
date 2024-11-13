@@ -12,7 +12,6 @@ class CaroneSpider(scrapy.Spider):
         'https://www.carone.com.br/carnes',
         'https://www.carone.com.br/congelados',
         'https://www.carone.com.br/hortifruti',
-        'https://www.carone.com.br/especial-natal',
         'https://www.carone.com.br/utilidades',
         'https://www.carone.com.br/temperos-e-especiarias',
         'https://www.carone.com.br/infantil---bebe',
@@ -22,19 +21,24 @@ class CaroneSpider(scrapy.Spider):
         'https://www.carone.com.br/pet-shop',
         'https://www.carone.com.br/produtos-etnicos',
         'https://www.carone.com.br/higiene-e-beleza',
-        'https://www.carone.com.br/higiene-pessoal'
     ]
 
     def parse(self, response):
+        # Seleciona todos os produtos na página
+        products = response.css('li.utilidades, li.alimentos, li.limpeza, li.adega, li.bebidas, li.frios-e-laticinios, li.carnes, li.congelados, li.hortifruti, li.temperos-e-especiarias, li.infantil---bebe, li.bem-estar, li.bomboniere-e-doces, li.padaria-e-ritisseria, li.pet-shop, li.produtos-etnicos, li.higiene-e-beleza')
+
+        if not products:
+            self.log(f'Nenhum produto encontrado em {response.url}')
+            return
+
         # Coleta produtos da página da categoria
-        for product in response.css('.box-item.showcase-shelf-alternative'):
-            brand = product.css('.product-brand::text').get().strip()  # Extraindo a marca
-            name = product.css('.product-name a::text').get().strip()  # Extraindo o nome do produto
-            
-            # Capturando o HTML do produto como texto
+        for product in products:
+            brand = product.css('.product-brand::text').get()
+            name = product.css('.product-name a::text').get()
+
+            # Extraindo preços usando regex se estiverem comentados
             product_html = product.get()
 
-            # Usando regex para encontrar preços
             old_price_match = re.search(r'R\$[\s]*([\d,.]+)', product_html)
             best_price_match = re.search(r'R\$[\s]*([\d,.]+)', product_html)
 
@@ -42,25 +46,16 @@ class CaroneSpider(scrapy.Spider):
             old_price = old_price_match.group(1) if old_price_match else None
             best_price = best_price_match.group(1) if best_price_match else None
 
-            # Log para depuração
-            self.log(f'Produto: {name}, Old Price: {old_price}, Best Price: {best_price}')
-
-            # Determinando o preço a ser usado
-            if best_price:
-                price = best_price  # Preço em promoção
-            elif old_price:
-                price = old_price  # Preço antigo
-            else:
-                price = 'Preço não disponível'
-
             yield {
-                'Marca': brand,
-                'Nome': name,
-                'Preco': price,
-                'Preço_Antigo': old_price,  # Incluindo o preço antigo se disponível
+                'Marca': brand.strip() if brand else 'Marca não disponível',
+                'Nome': name.strip() if name else 'Nome não disponível',
+                'Preco': best_price,
+                'Preço_Antigo': old_price,
             }
 
         # Paginando se houver mais produtos na categoria
         next_page = response.css('a.next::attr(href)').get()
         if next_page:
             yield response.follow(next_page, self.parse)
+        else:
+            self.log(f'Não há mais páginas para {response.url}')
